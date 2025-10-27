@@ -54,7 +54,7 @@ void add_pack(char *dir, char* name, char* version)
     printf("package %s version %s installed in %s\n", name, version, dir);
 }
 
-void remove_pack(char *env, char* name)
+void remove_pack(char *env, char* name, char* version)
 {
     FILE *f1,*f2;
     char line[256];
@@ -74,8 +74,8 @@ void remove_pack(char *env, char* name)
     
     while(fgets(line, sizeof(line), f1))
     {
-        if(strstr(line, name)==NULL)
-            fprintf(f2,"%s\n",line);
+        if(strstr(line, name)==NULL||strncmp((strstr(line, name)+strlen(name)+1), version, strlen(version))!=0)
+            fprintf(f2,"%s",line);
     }
     remove("requirements");
     fclose(f1);
@@ -93,7 +93,7 @@ void prepare_pack(char *env, char* pack, bool remove, bool add)
     if(version==NULL)
         version="1.0";
     if(add) add_pack(env, name, version);
-    if(remove) remove_pack(env, name);
+    if(remove) remove_pack(env, name, version);
     free(pack_copy);
 }
 
