@@ -1,0 +1,109 @@
+using System.Reflection;
+
+// --- DEFINICJE TYPÓW (Klasy, Interfejsy, Atrybuty) ---
+
+// [PKT 1] Tworzenie własnych atrybutów
+// Atrybut musi dziedziczyć po klasie System.Attribute
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property)]
+public class DoEksportuAttribute : Attribute
+{
+    public string Opis { get; }
+    public DoEksportuAttribute(string opis) => Opis = opis;
+}
+
+// Interfejs generyczny do zadania [PKT 5]
+public interface IPrzetwarzalny<T> {
+    void Przetworz(T dane);
+}
+
+// Klasa abstrakcyjna do zadania [PKT 3]
+public abstract class RaportBazowy {
+    public abstract string PobierzTytul();
+}
+
+// Nasza przykładowa klasa, na której będziemy testować refleksję
+[DoEksportu("To jest główny raport finansowy")] // Użycie atrybutu na klasie
+public class RaportFinansowy : RaportBazowy, IPrzetwarzalny<string>
+{
+    [DoEksportu("Kolumna z autorem")] // Użycie atrybutu na właściwości
+    public string Autor { get; set; }
+
+    public decimal Kwota { get; set; } // Ta właściwość NIE ma atrybutu
+
+    public override string PobierzTytul() => "Raport Roczny";
+    public void Przetworz(string dane) => Console.WriteLine($"Przetwarzam: {dane}");
+}
+
+// Druga klasa, żeby było co filtrować (nie dziedziczy po RaportBazowy)
+public class InnaKlasa { }
+
+// --- PROGRAM GŁÓWNY (Main) ---
+
+public class Program
+{
+    public static void Main()
+    {
+        // Pobieramy "Assembly", czyli bieżący program/plik .exe lub .dll
+        Assembly assembly = Assembly.GetExecutingAssembly();
+
+        Console.WriteLine("--- [PKT 2] Typy z atrybutem 'DoEksportu' ---");
+        // [PKT 2] Pobieranie z assembly typów oznaczonych atrybutem
+        var typyZAtrybutem = assembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<DoEksportuAttribute>() != null);
+
+        foreach (var typ in typyZAtrybutem)
+        {
+            Console.WriteLine($"Znaleziono typ: {typ.Name}");
+        }
+
+        Console.WriteLine("\n--- [PKT 3] Typy dziedziczące po 'RaportBazowy' ---");
+        // [PKT 3] Pobieranie z assembly typów dziedziczących po klasie abstrakcyjnej
+        var raporty = assembly.GetTypes()
+            .Where(t => t.IsSubclassOf(typeof(RaportBazowy)) && !t.IsAbstract);
+
+        foreach (var rap in raporty)
+        {
+            Console.WriteLine($"Znaleziono raport: {rap.Name}");
+        }
+
+        Console.WriteLine("\n--- [PKT 4] Właściwości typu 'RaportFinansowy' z atrybutem ---");
+        // Wybieramy konkretny typ do analizy
+        Type typRaportu = typeof(RaportFinansowy);
+
+        // [PKT 4] Pobranie z typu właściwości oznaczonych atrybutem
+        var wlasciwosci = typRaportu.GetProperties()
+            .Where(p => p.GetCustomAttribute<DoEksportuAttribute>() != null);
+
+        foreach (var prop in wlasciwosci)
+        {
+            Console.WriteLine($"Właściwość: {prop.Name} (Typ: {prop.PropertyType.Name})");
+        }
+
+        Console.WriteLine("\n--- [PKT 5] Czy typ implementuje generyczny interfejs? ---");
+        // [PKT 5] Czy typ implementuje IPrzetwarzalny<>?
+        // To jest logika, o którą pytałeś wcześniej.
+        Type szukanyInterfejs = typeof(IPrzetwarzalny<>);
+        
+        bool czyImplementuje = typRaportu.GetInterfaces()
+            .Any(i => i.IsGenericType && 
+                      i.GetGenericTypeDefinition() == szukanyInterfejs);
+
+        Console.WriteLine($"Czy {typRaportu.Name} implementuje IPrzetwarzalny<>? -> {czyImplementuje}");
+
+        Console.WriteLine("\n--- [PKT 6] Ustawienie wartości przez SetValue ---");
+        // [PKT 6] Ustawienie wartości właściwości na instancji typu
+        
+        // 1. Najpierw musimy stworzyć instancję (obiekt) tego typu
+        object instancja = Activator.CreateInstance(typRaportu);
+
+        // 2. Pobieramy właściwość, którą chcemy zmienić (np. "Autor")
+        PropertyInfo propAutor = typRaportu.GetProperty("Autor");
+
+        // 3. Wywołujemy SetValue(na czym, nowa wartosc)
+        propAutor.SetValue(instancja, "Jan Kowalski");
+
+        // Sprawdzenie czy zadziałało (rzutujemy na RaportFinansowy żeby wyświetlić)
+        var raport = instancja as RaportFinansowy;
+        Console.WriteLine($"Wartość w obiekcie po SetValue: {raport.Autor}");
+    }
+}
