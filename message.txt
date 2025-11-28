@@ -1,0 +1,116 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Runtime.Loader;
+using MiniTest.Attributes;
+
+namespace MiniTestRunner;
+
+public class Runner
+{
+    private Assembly[] _assembly;
+    
+    public Runner (string path)
+    {
+        var assemblyContext = new AssemblyLoader(path, true);
+        assemblyContext.LoadFromAssemblyPath(path);
+        
+        Console.WriteLine($"Loaded assembly: {path}");
+        _assembly = assemblyContext.Assemblies.ToArray();
+    }
+
+    private List<Type> FindClassWithAttributes(Type attributeType) =>
+        _assembly.SelectMany(ass => ass.GetTypes().Where(t => t.GetCustomAttributes(attributeType, true).Length > 0)).ToList();
+
+    private List<MethodInfo> FindMethodsWithAttributes(Type lookupType, Type attributeType) =>
+        lookupType.GetMethods().Where(m => m.GetCustomAttributes(attributeType, true).Length > 0).ToList();
+
+    public void RunLogic()
+    {
+        var classes = FindClassWithAttributes(typeof(TestClassAttribute));
+
+        foreach (var @class in classes)
+        {
+            Console.WriteLine($"Running {@class.Name}");
+            if (@class.GetConstructor([]) == null)
+            {
+                Console.WriteLine($"{@class.Name} does not have a default constructor, skipping");
+                continue;
+            }
+
+            var instance = @class.GetConstructor([])!.Invoke([]);
+            
+            var testMethods = FindMethodsWithAttributes(@class, typeof(TestMethodAttribute));
+            var beforeMethod = FindMethodsWithAttributes(@class, typeof(BeforeEachAttribute)).FirstOrDefault();
+            var afterMethod = FindMethodsWithAttributes(@class, typeof(AfterEachAttribute)).FirstOrDefault();
+            
+            // Handle bad datarow args
+
+            var sortedMethods = testMethods
+                .OrderBy(method =>
+                    method.GetCustomAttribute(typeof(PriorityAttribute)) is PriorityAttribute priorityAttribute
+                        ? priorityAttribute.Priority
+                        : 0
+                );
+
+            var all = 0;
+            var failed = 0;
+            foreach (var method in sortedMethods)
+            {
+                var data =
+                    method.GetCustomAttributes(typeof(DataRowAttribute), false)
+                        .Select(d => (DataRowAttribute)d).ToList();
+                
+                all += data.Count > 0 ? data.Count : 1;
+                if (data.Count == 0)
+                {
+                    failed += RunTest(
+                        instance,
+                        method,
+                        null,
+                        beforeMethod,
+                        afterMethod
+                        ) ? 0 : 1;
+                }
+                else
+                {
+                    foreach (var dataRow in data)
+                    {
+                        failed += RunTest(
+                            instance,
+                            method,
+                            dataRow,
+                            beforeMethod,
+                            afterMethod
+                        ) ? 0 : 1;
+                    }
+                }
+            }
+
+            var formatted = $"{@class.Name} executed {all} tests with {failed} failed";
+            var separator = new String('-', formatted.Length);
+            Console.WriteLine(separator);
+            Console.WriteLine(formatted);
+            Console.WriteLine(separator, '\n');
+        }
+    }
+
+    private bool RunTest(object instance, MethodInfo testMethod, DataRowAttribute? data, MethodInfo? before = null, MethodInfo? after = null)
+    {
+        Console.Write($"Running {testMethod.Name} : {(data?.Description ?? "")} : ");
+        try
+        {
+            before?.Invoke(instance, []);
+            testMethod.Invoke(instance, data?.Data ?? []);
+            after?.Invoke(instance, []);
+            
+            Chalk.Green("PASSED");
+            return true;
+        }
+        catch (Exception e)
+        {
+            Chalk.Red($"FAILED: {e.Message}");
+            return false;
+        }
+        
+    }
+}
